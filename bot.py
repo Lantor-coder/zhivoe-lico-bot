@@ -1,9 +1,10 @@
 import asyncio
+import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiohttp import web
-import os
 
+# === НАСТРОЙКИ ===
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = -1003189812929
 PRODAMUS_LINK = "https://payform.ru/cd9qXh7/"
@@ -11,7 +12,8 @@ PRODAMUS_LINK = "https://payform.ru/cd9qXh7/"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# --- Aiogram handlers ---
+
+# === ОБРАБОТЧИКИ БОТА ===
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     tg_id = message.from_user.id
@@ -27,313 +29,66 @@ async def cmd_start(message: types.Message):
 
 @dp.message(Command("access"))
 async def cmd_access(message: types.Message):
-    try:
-        invite_link = await bot.create_chat_invite_link(chat_id=CHANNEL_ID, member_limit=1)
-        await message.answer(
-            f"🎉 Оплата получена!\nВот ссылка на закрытый канал:\n{invite_link.invite_link}"
-        )
-    except Exception as e:
-        await message.answer(f"Ошибка при выдаче доступа 😔\n{e}")
+    """Ручная проверка команды /access"""
+    await give_access(message.from_user.id, message)
 
 
-# --- HTTP "псевдо-сервер", чтобы Render не выключал сервис ---
-async def handle(request):
-    return web.Response(text="ok")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get("/", handle)
-    port = int(os.getenv("PORT", 10000))
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    print(f"HTTP dummy server running on port {port}")
-
-
-
-from aiohttp import web
-
-# --- ручка для n8n ---
-async def handle_access(request):
-    data = await request.json()
-    user_id = data.get("telegram_id")
-    if not user_id:
-        return web.Response(text="No telegram_id", status=400)
-
+# === ЛОГИКА ВЫДАЧИ ДОСТУПА ===
+async def give_access(user_id: int, message: types.Message | None = None):
     try:
         invite_link = await bot.create_chat_invite_link(
             chat_id=CHANNEL_ID,
             name=f"access_{user_id}",
             member_limit=1,
-            expire_date=None
-        )
-        await bot.send_message(
-            chat_id=user_id,
-            text=(
-                f"🎉 Оплата получена!\n\n"
-                f"Вот ваша персональная ссылка для входа в курс:\n\n"
-                f"{invite_link.invite_link}"
-            )
-        )
-        return web.Response(text="ok", status=200)
-
-    except Exception as e:
-        return web.Response(text=str(e), status=500)
-
-
-# --- добавляем маршрут в aiohttp ---
-async def run_dummy_server():
-    app = web.Application()
-    app.router.add_post("/access", handle_access)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
-    await site.start()
-    print("Webhook server running on port 8080")
-
-
-# --- Webhook для n8n ---
-from aiohttp import web
-
-async def handle_access(request):
-    data = await request.json()
-    user_id = data.get("telegram_id")
-    if not user_id:
-        return web.Response(text="No telegram_id", status=400)
-
-    try:
-        invite_link = await bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID,
-            name=f"access_{user_id}",
-            member_limit=1,
-            expire_date=None
-        )
-        await bot.send_message(
-            chat_id=user_id,
-            text=(
-                f"🎉 Оплата получена!\n\n"
-                f"Вот ваша персональная ссылка для входа в курс:\n\n"
-                f"{invite_link.invite_link}"
-            )
-        )
-        return web.Response(text="ok", status=200)
-
-    except Exception as e:
-        return web.Response(text=str(e), status=500)
-
-
-async def run_dummy_server():
-    
-    app = web.Application()
-    app.router.add_post("/access", handle_access)  # ← вот этот маршрут нужен!
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
-    await site.start()
-    print("Webhook server running on port 8080")
-
-
-# --- Главный запуск ---
-async def main():
-    await asyncio.gather(
-        start_web_server(),   # сервер для Render
-        dp.start_polling(bot) # aiogram
-    )
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-
-
-# --- ДОБАВЛЯЕМ В КОНЕЦ ФАЙЛА ---
-
-from aiogram.filters import Command
-
-CHANNEL_ID = -1003189812929  # ID твоего закрытого канала
-
-@dp.message(Command("access"))
-async def access_message(message: types.Message):
-    try:
-        # создаём персональную одноразовую ссылку на канал
-        invite_link = await bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID,
-            name=f"access_{message.from_user.id}",
-            member_limit=1,   # только для одного человека
-            expire_date=None  # без срока действия
+            expire_date=None,
         )
 
-        await message.answer(
-            f"🎉 Оплата получена!\n\n"
+        text = (
+            "🎉 Оплата получена!\n\n"
             f"Вот ваша персональная ссылка для входа в курс:\n\n"
             f"{invite_link.invite_link}"
         )
 
+        if message:
+            await message.answer(text)
+        else:
+            await bot.send_message(chat_id=user_id, text=text)
+
     except Exception as e:
-        await message.answer(f"⚠️ Ошибка при создании ссылки: {e}")
+        err = f"⚠️ Ошибка при создании ссылки: {e}"
+        if message:
+            await message.answer(err)
+        else:
+            await bot.send_message(chat_id=user_id, text=err)
 
 
-
-# Ловим если n8n прислал просто текст "/access"
-@dp.message(lambda message: message.text == "/access")
-async def access_text_message(message: types.Message):
-    try:
-        invite_link = await bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID,
-            name=f"access_{message.from_user.id}",
-            member_limit=1,
-            expire_date=None
-        )
-
-        await message.answer(
-            f"🎉 Оплата получена!\n\n"
-            f"Вот ваша персональная ссылка для входа в курс:\n\n"
-            f"{invite_link.invite_link}"
-        )
-    except Exception as e:
-        await message.answer(f"⚠️ Ошибка при создании ссылки: {e}")
-
-
-
-from aiohttp import web
-import threading
-
+# === HTTP-СЕРВЕР ДЛЯ RENDER И N8N ===
 async def handle_access(request):
+    """Маршрут для n8n: POST /access"""
     data = await request.json()
     user_id = data.get("telegram_id")
     if not user_id:
         return web.Response(text="No telegram_id", status=400)
 
-    try:
-        invite_link = await bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID,
-            name=f"access_{user_id}",
-            member_limit=1,
-            expire_date=None
-        )
-        await bot.send_message(
-            chat_id=user_id,
-            text=(
-                f"🎉 Оплата получена!\n\n"
-                f"Вот ваша персональная ссылка для входа в курс:\n\n"
-                f"{invite_link.invite_link}"
-            )
-        )
-        return web.Response(text="ok", status=200)
-    except Exception as e:
-        return web.Response(text=str(e), status=500)
+    await give_access(int(user_id))
+    return web.Response(text="ok", status=200)
 
-async def run_web_server():
-    app = web.Application()
-    app.router.add_post("/access", handle_access)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 10000)  # порт можно любой (Render сам найдёт)
-    await site.start()
-    print("✅ Webhook server started at /access")
-
-def start_web_server():
-    asyncio.run(run_web_server())
-
-if __name__ == "__main__":
-    # запускаем aiohttp сервер в отдельном потоке
-    threading.Thread(target=start_web_server, daemon=True).start()
-
-    # запускаем aiogram
-    from aiohttp import web
-
-async def handle_access(request):
-    data = await request.json()
-    user_id = data.get("telegram_id")
-    if not user_id:
-        return web.Response(text="No telegram_id", status=400)
-
-    try:
-        invite_link = await bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID,
-            name=f"access_{user_id}",
-            member_limit=1,
-            expire_date=None
-        )
-        await bot.send_message(
-            chat_id=user_id,
-            text=(
-                f"🎉 Оплата получена!\n\n"
-                f"Вот ваша персональная ссылка для входа в курс:\n\n"
-                f"{invite_link.invite_link}"
-            )
-        )
-        return web.Response(text="ok", status=200)
-    except Exception as e:
-        return web.Response(text=str(e), status=500)
-
-
-async def on_startup(app):
-    # Запускаем aiogram при старте веб-сервера
-    asyncio.create_task(dp.start_polling(bot))
-    print("✅ Aiogram polling started")
-
-def create_app():
-    app = web.Application()
-    app.router.add_post("/access", handle_access)
-    app.on_startup.append(on_startup)
-    return app
-
-if __name__ == "__main__":
-    app = create_app()
-    web.run_app(app, host="0.0.0.0", port=8080)
-
-import os
-port = int(os.environ.get("PORT", 8080))
-web.run_app(app, host="0.0.0.0", port=port)
-
-
-from aiohttp import web
-import os
-
-async def handle_access(request):
-    data = await request.json()
-    user_id = data.get("telegram_id")
-    if not user_id:
-        return web.Response(text="No telegram_id", status=400)
-
-    try:
-        invite_link = await bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID,
-            name=f"access_{user_id}",
-            member_limit=1,
-            expire_date=None
-        )
-        await bot.send_message(
-            chat_id=user_id,
-            text=(
-                f"🎉 Оплата получена!\n\n"
-                f"Вот ваша персональная ссылка для входа в курс:\n\n"
-                f"{invite_link.invite_link}"
-            )
-        )
-        return web.Response(text="ok", status=200)
-    except Exception as e:
-        return web.Response(text=str(e), status=500)
 
 async def on_startup(app):
     asyncio.create_task(dp.start_polling(bot))
     print("✅ Aiogram polling started")
 
+
 def create_app():
     app = web.Application()
-    app.router.add_post("/access", handle_access)
+    app.router.add_get("/", lambda _: web.Response(text="ok"))  # проверочный маршрут
+    app.router.add_post("/access", handle_access)               # основной маршрут для n8n
     app.on_startup.append(on_startup)
     return app
 
+
+# === ЗАПУСК ===
 if __name__ == "__main__":
     app = create_app()
-    port = int(os.environ.get("PORT", 8080))   # ← важно для Render
+    port = int(os.environ.get("PORT", 8080))
     web.run_app(app, host="0.0.0.0", port=port)
-
-
-
-
-
-
-
