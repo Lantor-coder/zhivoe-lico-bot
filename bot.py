@@ -195,4 +195,54 @@ async def access_text_message(message: types.Message):
 
 
 
+from aiohttp import web
+import threading
+
+async def handle_access(request):
+    data = await request.json()
+    user_id = data.get("telegram_id")
+    if not user_id:
+        return web.Response(text="No telegram_id", status=400)
+
+    try:
+        invite_link = await bot.create_chat_invite_link(
+            chat_id=CHANNEL_ID,
+            name=f"access_{user_id}",
+            member_limit=1,
+            expire_date=None
+        )
+        await bot.send_message(
+            chat_id=user_id,
+            text=(
+                f"🎉 Оплата получена!\n\n"
+                f"Вот ваша персональная ссылка для входа в курс:\n\n"
+                f"{invite_link.invite_link}"
+            )
+        )
+        return web.Response(text="ok", status=200)
+    except Exception as e:
+        return web.Response(text=str(e), status=500)
+
+async def run_web_server():
+    app = web.Application()
+    app.router.add_post("/access", handle_access)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 10000)  # порт можно любой (Render сам найдёт)
+    await site.start()
+    print("✅ Webhook server started at /access")
+
+def start_web_server():
+    asyncio.run(run_web_server())
+
+if __name__ == "__main__":
+    # запускаем aiohttp сервер в отдельном потоке
+    threading.Thread(target=start_web_server, daemon=True).start()
+
+    # запускаем aiogram
+    asyncio.run(main())
+
+
+
+
 
