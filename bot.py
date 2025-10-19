@@ -88,3 +88,25 @@ async def access_message(message: types.Message):
     except Exception as e:
         await message.answer(f"⚠️ Ошибка при создании ссылки: {e}")
 
+
+
+# Ловим если n8n прислал просто текст "/access"
+@dp.message(lambda message: message.text == "/access")
+async def access_text_message(message: types.Message):
+    try:
+        invite_link = await bot.create_chat_invite_link(
+            chat_id=CHANNEL_ID,
+            name=f"access_{message.from_user.id}",
+            member_limit=1,
+            expire_date=None
+        )
+
+        await message.answer(
+            f"🎉 Оплата получена!\n\n"
+            f"Вот ваша персональная ссылка для входа в курс:\n\n"
+            f"{invite_link.invite_link}"
+        )
+    except Exception as e:
+        await message.answer(f"⚠️ Ошибка при создании ссылки: {e}")
+
+
