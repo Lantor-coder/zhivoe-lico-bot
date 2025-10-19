@@ -3,14 +3,12 @@ import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-# === НАСТРОЙКИ ===
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = -1003189812929
 PRODAMUS_LINK = "https://payform.ru/cd9qXh7/"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
 
 # === СТАРТ ===
 @dp.message(Command("start"))
@@ -25,18 +23,17 @@ async def cmd_start(message: types.Message):
     )
     await message.answer(text)
 
-
-# === /ACCESS (и от людей, и от n8n) ===
-@dp.message(Command("access"))
-@dp.message(lambda message: message.text.strip() == "/access")
-async def cmd_access(message: types.Message):
+# === ЕДИНЫЙ ОБРАБОТЧИК /access ===
+@dp.message(lambda msg: msg.text and msg.text.strip() == "/access")
+async def handle_access(message: types.Message):
+    """Создаёт персональную ссылку после оплаты"""
     user_id = message.from_user.id
     try:
         invite_link = await bot.create_chat_invite_link(
             chat_id=CHANNEL_ID,
             name=f"access_{user_id}",
             member_limit=1,
-            expire_date=None
+            expire_date=None,
         )
         await bot.send_message(
             chat_id=user_id,
@@ -44,11 +41,10 @@ async def cmd_access(message: types.Message):
                 f"🎉 Оплата получена!\n\n"
                 f"Вот ваша персональная ссылка для входа в курс:\n\n"
                 f"{invite_link.invite_link}"
-            )
+            ),
         )
     except Exception as e:
         await message.answer(f"⚠️ Ошибка при создании ссылки: {e}")
-
 
 # === ЗАПУСК ===
 async def main():
