@@ -30,10 +30,11 @@ async def cmd_access(message: types.Message):
             f"🎉 Оплата получена!\nВот ссылка на закрытый канал:\n{invite_link.invite_link}"
         )
     except Exception as e:
-        await message.answer(f"Ошибка при выдаче доступа 😔 напишите администратору @nastroika@tela\n{e}")
+        await message.answer(f"Ошибка при выдаче доступа 😔 напишите администратору @nastroika_tela\n{e}")
 
 async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
