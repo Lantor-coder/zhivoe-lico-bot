@@ -27,10 +27,7 @@ async def cmd_start(message: types.Message):
     await message.answer(text)
 
 
-@dp.message(Command("access"))
-async def cmd_access(message: types.Message):
-    """Ручная проверка команды /access"""
-    await give_access(message.from_user.id, message)
+
 
 
 # === ЛОГИКА ВЫДАЧИ ДОСТУПА ===
@@ -125,6 +122,7 @@ async def send_access_link(user_id: int, message: types.Message):
         )
     except Exception as e:
         await message.answer(f"⚠️ Ошибка при создании ссылки: {e}")
+
 
 
 
