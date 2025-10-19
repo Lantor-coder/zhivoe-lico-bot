@@ -1,6 +1,7 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiohttp import web
 import os
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -10,6 +11,7 @@ PRODAMUS_LINK = "https://payform.ru/cd9qXh7/"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+# --- Aiogram handlers ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     tg_id = message.from_user.id
@@ -22,6 +24,7 @@ async def cmd_start(message: types.Message):
     )
     await message.answer(text)
 
+
 @dp.message(Command("access"))
 async def cmd_access(message: types.Message):
     try:
@@ -30,27 +33,29 @@ async def cmd_access(message: types.Message):
             f"🎉 Оплата получена!\nВот ссылка на закрытый канал:\n{invite_link.invite_link}"
         )
     except Exception as e:
-        await message.answer(f"Ошибка при выдаче доступа 😔 напишите администратору @nastroika_tela\n{e}")
+        await message.answer(f"Ошибка при выдаче доступа 😔\n{e}")
 
-async def main():
-    await dp.start_polling(bot)
 
-if __name__ == "__main__":
-    asyncio.run(main())
-
-import threading
-from aiohttp import web
-
+# --- HTTP "псевдо-сервер", чтобы Render не выключал сервис ---
 async def handle(request):
     return web.Response(text="ok")
 
-def run_dummy_server():
+async def start_web_server():
     app = web.Application()
     app.router.add_get("/", handle)
     port = int(os.getenv("PORT", 10000))
-    web.run_app(app, host="0.0.0.0", port=port)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"HTTP dummy server running on port {port}")
+
+# --- Главный запуск ---
+async def main():
+    await asyncio.gather(
+        start_web_server(),   # сервер для Render
+        dp.start_polling(bot) # aiogram
+    )
 
 if __name__ == "__main__":
-    threading.Thread(target=run_dummy_server).start()
     asyncio.run(main())
-
