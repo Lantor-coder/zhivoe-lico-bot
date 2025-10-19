@@ -92,3 +92,40 @@ if __name__ == "__main__":
     app = create_app()
     port = int(os.environ.get("PORT", 8080))
     web.run_app(app, host="0.0.0.0", port=port)
+
+from aiogram import types
+
+@dp.message(Command("access"))
+async def cmd_access_command(message: types.Message):
+    """Срабатывает, если человек сам вводит /access"""
+    await send_access_link(message.from_user.id, message)
+
+
+@dp.message(lambda message: message.text.strip() == "/access")
+async def cmd_access_text(message: types.Message):
+    """Срабатывает, если n8n прислал текст '/access'"""
+    await send_access_link(message.chat.id, message)
+
+
+async def send_access_link(user_id: int, message: types.Message):
+    try:
+        invite_link = await bot.create_chat_invite_link(
+            chat_id=CHANNEL_ID,
+            name=f"access_{user_id}",
+            member_limit=1,
+            expire_date=None
+        )
+        await bot.send_message(
+            chat_id=user_id,
+            text=(
+                f"🎉 Оплата получена!\n\n"
+                f"Вот ваша персональная ссылка для входа в курс:\n\n"
+                f"{invite_link.invite_link}"
+            )
+        )
+    except Exception as e:
+        await message.answer(f"⚠️ Ошибка при создании ссылки: {e}")
+
+
+
+
