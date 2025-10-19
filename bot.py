@@ -59,3 +59,32 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
+# --- ДОБАВЛЯЕМ В КОНЕЦ ФАЙЛА ---
+
+from aiogram.filters import Command
+
+CHANNEL_ID = -1003189812929  # ID твоего закрытого канала
+
+@dp.message(Command("access"))
+async def access_message(message: types.Message):
+    try:
+        # создаём персональную одноразовую ссылку на канал
+        invite_link = await bot.create_chat_invite_link(
+            chat_id=CHANNEL_ID,
+            name=f"access_{message.from_user.id}",
+            member_limit=1,   # только для одного человека
+            expire_date=None  # без срока действия
+        )
+
+        await message.answer(
+            f"🎉 Оплата получена!\n\n"
+            f"Вот ваша персональная ссылка для входа в курс:\n\n"
+            f"{invite_link.invite_link}"
+        )
+
+    except Exception as e:
+        await message.answer(f"⚠️ Ошибка при создании ссылки: {e}")
+
