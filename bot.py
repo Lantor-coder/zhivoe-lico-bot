@@ -288,6 +288,49 @@ port = int(os.environ.get("PORT", 8080))
 web.run_app(app, host="0.0.0.0", port=port)
 
 
+from aiohttp import web
+import os
+
+async def handle_access(request):
+    data = await request.json()
+    user_id = data.get("telegram_id")
+    if not user_id:
+        return web.Response(text="No telegram_id", status=400)
+
+    try:
+        invite_link = await bot.create_chat_invite_link(
+            chat_id=CHANNEL_ID,
+            name=f"access_{user_id}",
+            member_limit=1,
+            expire_date=None
+        )
+        await bot.send_message(
+            chat_id=user_id,
+            text=(
+                f"🎉 Оплата получена!\n\n"
+                f"Вот ваша персональная ссылка для входа в курс:\n\n"
+                f"{invite_link.invite_link}"
+            )
+        )
+        return web.Response(text="ok", status=200)
+    except Exception as e:
+        return web.Response(text=str(e), status=500)
+
+async def on_startup(app):
+    asyncio.create_task(dp.start_polling(bot))
+    print("✅ Aiogram polling started")
+
+def create_app():
+    app = web.Application()
+    app.router.add_post("/access", handle_access)
+    app.on_startup.append(on_startup)
+    return app
+
+if __name__ == "__main__":
+    app = create_app()
+    port = int(os.environ.get("PORT", 8080))   # ← важно для Render
+    web.run_app(app, host="0.0.0.0", port=port)
+
 
 
 
