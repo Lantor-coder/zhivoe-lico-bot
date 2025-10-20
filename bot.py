@@ -8,7 +8,10 @@ from aiohttp import web
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = -1003189812929
 PRODAMUS_LINK = "https://payform.ru/cd9qXh7/"
-SECRET_KEY = os.getenv("ACCESS_SECRET", "my_secret_key")  # 🔒 ключ для проверки вызовов из n8n
+SECRET_KEY = os.getenv("ACCESS_SECRET", "my_secret_key")
+
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = f"https://zhivoe-lico-bot.onrender.com{WEBHOOK_PATH}"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -28,13 +31,12 @@ async def cmd_start(message: types.Message):
     await message.answer(text)
 
 
-# === СЕРВЕР ДЛЯ N8N ===
+# === N8N выдача доступа ===
 async def handle_access(request):
-    """Выдаёт доступ только при правильном секретном ключе"""
+    """Безопасный webhook для n8n — выдаёт доступ только после оплаты"""
     data = await request.json()
-
-    # Проверяем секрет
     secret = request.headers.get("X-Access-Secret")
+
     if secret != SECRET_KEY:
         return web.Response(text="Unauthorized", status=401)
 
@@ -43,38 +45,54 @@ async def handle_access(request):
         return web.Response(text="Invalid telegram_id", status=400)
 
     try:
-        # Создаём персональную ссылку
         invite_link = await bot.create_chat_invite_link(
             chat_id=CHANNEL_ID,
             name=f"access_{user_id}",
             member_limit=1,
-            expire_date=None,  # можно ограничить срок, например, на 1 день
+            expire_date=None
         )
-
         await bot.send_message(
             chat_id=int(user_id),
             text=(
                 f"🎉 Оплата подтверждена!\n\n"
                 f"Вот ваша персональная ссылка для входа в курс:\n\n"
                 f"{invite_link.invite_link}"
-            ),
+            )
         )
         return web.Response(text="ok", status=200)
-
     except Exception as e:
         return web.Response(text=str(e), status=500)
 
 
+# === НАСТРОЙКА WEBHOOK ===
 async def on_startup(app):
-    asyncio.create_task(dp.start_polling(bot))
-    print("✅ Aiogram polling started")
+    # Удаляем старый webhook (на всякий случай)
+    await bot.delete_webhook()
+    # Ставим новый webhook
+    await bot.set_webhook(WEBHOOK_URL)
+    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
 
 
+async def on_shutdown(app):
+    print("🚫 Бот остановлен, webhook удалён")
+    await bot.delete_webhook()
+
+
+# === ОБРАБОТКА WEBHOOK Telegram ===
+async def handle_webhook(request):
+    update = await request.json()
+    await dp.feed_update(bot, update)
+    return web.Response(text="ok")
+
+
+# === СОЗДАНИЕ ПРИЛОЖЕНИЯ ===
 def create_app():
     app = web.Application()
-    app.router.add_get("/", lambda _: web.Response(text="ok"))  # Render health check
-    app.router.add_post("/access", handle_access)  # 🔒 защищённый маршрут для n8n
+    app.router.add_get("/", lambda _: web.Response(text="ok"))  # Health-check Render
+    app.router.add_post(WEBHOOK_PATH, handle_webhook)           # Webhook от Telegram
+    app.router.add_post("/access", handle_access)               # Webhook от n8n
     app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
     return app
 
 
