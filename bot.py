@@ -6,18 +6,15 @@ from aiohttp import web
 
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = -1003189812929
-PRODAMUS_LINK = "https://payform.ru/cd9qXh7/"
-SECRET_KEY = os.getenv("ACCESS_SECRET", "my_secret_key")
-
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = f"https://zhivoe-lico-bot.onrender.com{WEBHOOK_PATH}"
+ACCESS_SECRET = os.getenv("ACCESS_SECRET")  # секрет для n8n
+CHANNEL_ID = -1003189812929  # id закрытого канала
+PRODAMUS_LINK = "https://payform.ru/cd9qXh7/"  # ссылка на оплату
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 
-# === СТАРТ ===
+# === /start ===
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     tg_id = message.from_user.id
@@ -31,19 +28,9 @@ async def cmd_start(message: types.Message):
     await message.answer(text)
 
 
-# === N8N выдача доступа ===
-async def handle_access(request):
-    """Безопасный webhook для n8n — выдаёт доступ только после оплаты"""
-    data = await request.json()
-    secret = request.headers.get("X-Access-Secret")
-
-    if secret != SECRET_KEY:
-        return web.Response(text="Unauthorized", status=401)
-
-    user_id = data.get("telegram_id")
-    if not user_id or not str(user_id).isdigit():
-        return web.Response(text="Invalid telegram_id", status=400)
-
+# === ФУНКЦИЯ ВЫДАЧИ ДОСТУПА ===
+async def give_access(user_id: int):
+    """Создать уникальную ссылку и выдать доступ"""
     try:
         invite_link = await bot.create_chat_invite_link(
             chat_id=CHANNEL_ID,
@@ -52,51 +39,71 @@ async def handle_access(request):
             expire_date=None
         )
         await bot.send_message(
-            chat_id=int(user_id),
+            chat_id=user_id,
             text=(
-                f"🎉 Оплата подтверждена!\n\n"
+                f"🎉 Оплата получена!\n\n"
                 f"Вот ваша персональная ссылка для входа в курс:\n\n"
                 f"{invite_link.invite_link}"
             )
         )
-        return web.Response(text="ok", status=200)
     except Exception as e:
-        return web.Response(text=str(e), status=500)
+        await bot.send_message(chat_id=user_id, text=f"⚠️ Ошибка при выдаче доступа: {e}")
 
 
-# === НАСТРОЙКА WEBHOOK ===
-async def on_startup(app):
-    # Удаляем старый webhook (на всякий случай)
-    await bot.delete_webhook()
-    # Ставим новый webhook
-    await bot.set_webhook(WEBHOOK_URL)
-    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
+# === HTTP-ручка /access для n8n ===
+async def handle_access(request):
+    """Получает запрос из n8n и выдаёт доступ, если секрет совпадает"""
+    try:
+        data = await request.json()
+        secret = request.headers.get("X-Access-Secret")  # 🔒 защита
+        if secret != ACCESS_SECRET:
+            return web.Response(text="Forbidden", status=403)
+
+        user_id = data.get("telegram_id")
+        status = data.get("status")
+
+        if not user_id:
+            return web.Response(text="No telegram_id", status=400)
+
+        if status != "paid":
+            return web.Response(text="Not paid", status=200)
+
+        await give_access(int(user_id))
+        return web.Response(text="ok", status=200)
+
+    except Exception as e:
+        return web.Response(text=f"Error: {e}", status=500)
 
 
-async def on_shutdown(app):
-    print("🚫 Бот остановлен, webhook удалён")
-    await bot.delete_webhook()
+# === ПРОСТАЯ ПРОВЕРКА СЕРВЕРА ===
+async def handle_root(_):
+    return web.Response(text="ok")
 
 
-# === ОБРАБОТКА WEBHOOK Telegram ===
+# === WEBHOOK ДЛЯ TELEGRAM (если нужно использовать Webhook-режим) ===
+from aiogram import types
 async def handle_webhook(request):
-    update = await request.json()
+    data = await request.json()
+    update = types.Update.model_validate(data)
     await dp.feed_update(bot, update)
     return web.Response(text="ok")
 
 
-# === СОЗДАНИЕ ПРИЛОЖЕНИЯ ===
+# === СТАРТ ПРИЛОЖЕНИЯ ===
+async def on_startup(app):
+    asyncio.create_task(dp.start_polling(bot))
+    print("✅ Aiogram polling started")
+
+
 def create_app():
     app = web.Application()
-    app.router.add_get("/", lambda _: web.Response(text="ok"))  # Health-check Render
-    app.router.add_post(WEBHOOK_PATH, handle_webhook)           # Webhook от Telegram
-    app.router.add_post("/access", handle_access)               # Webhook от n8n
+    app.router.add_get("/", handle_root)         # проверочный маршрут
+    app.router.add_post("/access", handle_access) # n8n → бот
+    app.router.add_post("/webhook", handle_webhook)  # опционально
     app.on_startup.append(on_startup)
-    app.on_shutdown.append(on_shutdown)
     return app
 
 
-# === ЗАПУСК ===
 if __name__ == "__main__":
     app = create_app()
     port = int(os.environ.get("PORT", 8080))
