@@ -2,57 +2,37 @@ import os
 import json
 import hmac
 import hashlib
-from typing import Optional
-
-import requests
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("BOT_TOKEN")
-PRODAMUS_API_KEY = os.getenv("PRODAMUS_API_KEY")
-CHANNEL_ID = -1003189812929
-WEBHOOK_URL = "https://zhivoe-lico-bot.onrender.com/webhook"  # ← твой Render-домен
+PRODAMUS_SECRET = os.getenv("PRODAMUS_SECRET")  # 🔐 Секретный ключ из личного кабинета Продамус
+CHANNEL_ID = -1003189812929  # ID твоего закрытого Telegram-канала
+WEBHOOK_URL = "https://zhivoe-lico-bot.onrender.com/webhook"
 PRICE = 4500
-
-if not TOKEN:
-    raise RuntimeError("BOT_TOKEN environment variable is not set")
-
-if not PRODAMUS_API_KEY:
-    raise RuntimeError("PRODAMUS_API_KEY environment variable is not set")
+BASE_URL = "https://nastroikatela.payform.ru/"  # 🔗 твоя личная форма
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 
 # === СОЗДАНИЕ ССЫЛКИ НА ОПЛАТУ ===
-def create_invoice(tg_id: int):
-    url = "https://prodamus.com/api/v1/invoice"
-    headers = {"Authorization": f"Bearer {PRODAMUS_API_KEY}"}
-    payload = {
+def create_invoice(tg_id: int) -> str:
+    """Формирует ссылку на оплату через твою форму payform.ru"""
+    params = {
+        "do": "pay",
         "sum": PRICE,
-        "currency": "rub",
-        "order_num": str(tg_id),
-        "type": "course",  # обязательный параметр
+        "order_num": tg_id,
         "name": "Доступ к онлайн-курсу 'Живое лицо'",
         "description": "Онлайн-курс Антония Ланина 'Живое лицо'",
         "success_url": "https://t.me/nastroika_tela",
         "fail_url": "https://t.me/nastroika_tela",
-        "do": "pay",
     }
 
-    res = requests.post(url, headers=headers, json=payload)
-    if not res.ok:
-        print(f"⚠️ Ошибка Prodamus API: {res.status_code} → {res.text}")
-        return None
-
-    try:
-        data = res.json()
-        return data.get("url") or data.get("payment_link")
-    except Exception as e:
-        print(f"⚠️ Ошибка парсинга ответа Prodamus: {e}")
-        return None
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    return f"{BASE_URL}?{query}"
 
 
 # === /start ===
@@ -60,10 +40,6 @@ def create_invoice(tg_id: int):
 async def cmd_start(message: types.Message):
     tg_id = message.from_user.id
     pay_url = create_invoice(tg_id)
-
-    if not pay_url:
-        await message.answer("⚠️ Ошибка при создании ссылки на оплату. Попробуй позже.")
-        return
 
     text = (
         "Привет 🌿\n\n"
@@ -74,21 +50,21 @@ async def cmd_start(message: types.Message):
     await message.answer(text)
 
 
-# === ПРОВЕРКА ПОДПИСИ ОТ PRODAMUS ===
-def verify_signature(raw_body: str, signature: Optional[str]) -> bool:
+# === ПРОВЕРКА ПОДПИСИ ===
+def verify_signature(raw_body: str, signature: str) -> bool:
+    """Проверяет подпись, чтобы убедиться, что запрос пришёл от Продамус"""
     if not signature:
         return False
 
     expected = hmac.new(
-        PRODAMUS_API_KEY.encode(),
+        PRODAMUS_SECRET.encode(),
         msg=raw_body.encode(),
         digestmod=hashlib.sha256,
     ).hexdigest()
-    clean_signature = signature.strip().lower()
-    return hmac.compare_digest(expected, clean_signature)
+    return hmac.compare_digest(expected, signature.strip().lower())
 
 
-# === ВЫДАЧА ССЫЛКИ ПОСЛЕ ОПЛАТЫ ===
+# === ВЫДАЧА ДОСТУПА ПОСЛЕ ОПЛАТЫ ===
 async def handle_access(request):
     raw_body = await request.text()
     signature = request.headers.get("Sign")
@@ -99,11 +75,14 @@ async def handle_access(request):
         print("⚠️ Некорректный JSON в уведомлении Prodamus")
         return web.Response(text="invalid json", status=400)
 
+    # Проверяем подпись
     if not verify_signature(raw_body, signature):
         print("⚠️ Подпись не совпадает, запрос отклонён")
         return web.Response(text="invalid signature", status=403)
 
+    # Проверяем статус платежа
     if data.get("payment_status") != "success":
+        print("⏳ Платёж не завершён:", data)
         return web.Response(text="not success", status=200)
 
     user_id = data.get("order_num")
@@ -111,31 +90,26 @@ async def handle_access(request):
         return web.Response(text="no user_id", status=400)
 
     try:
-        user_id_int = int(user_id)
-    except (TypeError, ValueError):
-        print(f"⚠️ Некорректный order_num: {user_id}")
-        return web.Response(text="invalid user_id", status=400)
-
-    try:
         invite = await bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID, member_limit=1, name=f"access_{user_id}"
+            chat_id=CHANNEL_ID,
+            member_limit=1,
+            name=f"access_{user_id}",
         )
-        message_text = (
-            "🎉 Оплата получена!\n\n"
-            "Вот твоя персональная ссылка для входа в курс:\n\n"
-            f"{invite.invite_link}"
+        await bot.send_message(
+            int(user_id),
+            f"🎉 Оплата получена!\n\n"
+            f"Вот твоя персональная ссылка для входа в курс:\n\n"
+            f"{invite.invite_link}",
         )
-        await bot.send_message(user_id_int, message_text)
         print(f"✅ Доступ выдан пользователю {user_id}")
         return web.Response(text="ok", status=200)
     except Exception as e:
-        print(f"Ошибка при выдаче ссылки: {e}")
+        print(f"❌ Ошибка при выдаче ссылки: {e}")
         return web.Response(text="error", status=500)
 
 
-# === WEBHOOK ===
+# === ОБРАБОТКА ВЕБХУКА ОТ TELEGRAM ===
 async def handle_webhook(request):
-    """Обрабатывает входящие обновления от Telegram"""
     try:
         update = types.Update(**await request.json())
         await dp.feed_update(bot, update)
@@ -146,18 +120,17 @@ async def handle_webhook(request):
 
 # === СТАРТ СЕРВЕРА ===
 async def on_startup(app):
-    # Удалим старый webhook (если есть)
     await bot.delete_webhook(drop_pending_updates=True)
-    # Установим новый webhook
     await bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
 
 
 def create_app():
     app = web.Application()
-    app.router.add_post("/webhook", handle_webhook)
     app.router.add_post("/access", handle_access)
+    app.router.add_post("/webhook", handle_webhook)
     app.router.add_get("/", lambda _: web.Response(text="ok"))
+    app.on_startup.append(on_startup)
     return app
 
 
@@ -165,4 +138,3 @@ if __name__ == "__main__":
     app = create_app()
     port = int(os.environ.get("PORT", 8080))
     web.run_app(app, host="0.0.0.0", port=port)
-
