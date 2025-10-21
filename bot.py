@@ -148,9 +148,38 @@ def create_app():
     return app
 
 # === ЗАПУСК ===
+
+from aiogram import types
+
+async def handle_webhook(request):
+    """Обработка входящих webhook-апдейтов от Telegram"""
+    try:
+        update = types.Update(**await request.json())
+    except Exception as e:
+        print(f"⚠️ Ошибка парсинга webhook: {e}")
+        return web.Response(status=400)
+
+    await dp.feed_update(bot, update)
+    return web.Response(status=200)
+
+
+def create_app():
+    app = web.Application()
+    # POST для Telegram webhook
+    app.router.add_post("/webhook", handle_webhook)
+    # POST для оплаты от Prodamus
+    app.router.add_post("/access", handle_access)
+    # Проверка доступности
+    app.router.add_get("/", lambda _: web.Response(text="ok"))
+    return app
+
+
 if __name__ == "__main__":
     app = create_app()
     port = int(os.environ.get("PORT", 8080))
+    print("✅ Запуск сервера на порту", port)
     web.run_app(app, host="0.0.0.0", port=port)
+
+
 
 
