@@ -143,7 +143,7 @@ def create_app():
     app.router.add_post("/webhook", handle_webhook)  # Telegram
     app.router.add_post("/access", handle_access)    # Prodamus webhook
     app.router.add_get("/", lambda _: web.Response(text="ok"))  # Ping
-    app.on_startup.append(on_startup)
+  
     app.on_cleanup.append(on_cleanup)
     return app
 
@@ -179,6 +179,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print("✅ Запуск сервера на порту", port)
     web.run_app(app, host="0.0.0.0", port=port)
+
 
 
 
