@@ -7,22 +7,23 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# === Константы ===
+# === Конфигурация ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PRODAMUS_SECRET = os.getenv("PRODAMUS_SECRET")
 BASE_URL = "https://nastroikatela.payform.ru/"
-PRICE = 4500  # цена курса
 WEBHOOK_URL = "https://zhivoe-lico-bot.onrender.com/webhook"
+PRICE = 4500  # стоимость курса
 
-bot = Bot(token=BOT_TOKEN, default=types.DefaultBotProperties(parse_mode=ParseMode.HTML))
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 
-# === Генерация HMAC-подписанной ссылки на оплату ===
+# === Генерация платёжной ссылки (HMAC) ===
 def create_invoice(tg_id: int) -> str:
-    """Создаёт платёжную ссылку Prodamus со всеми параметрами и подписью"""
+    """Создаёт HMAC-подписанную ссылку Prodamus"""
     data = {
         "order_id": tg_id,
         "customer_phone": "",
@@ -45,6 +46,7 @@ def create_invoice(tg_id: int) -> str:
         "npd_income_type": "FROM_INDIVIDUAL",
     }
 
+    # Подпись данных
     json_data = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     signature = hmac.new(
         PRODAMUS_SECRET.encode(),
@@ -58,7 +60,7 @@ def create_invoice(tg_id: int) -> str:
     return f"{BASE_URL}?{query}"
 
 
-# === Команда /start ===
+# === Обработка команды /start ===
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):
     pay_link = create_invoice(message.from_user.id)
@@ -71,14 +73,14 @@ async def start_cmd(message: types.Message):
     await message.answer(text, disable_web_page_preview=True)
 
 
-# === Обработка уведомления от Prodamus ===
+# === Webhook от Prodamus (уведомление о платеже) ===
 async def handle_access(request: web.Request):
-    """Webhook от Prodamus после успешной оплаты"""
     try:
         data = await request.json()
         order_id = data.get("order_id")
         payment_status = data.get("status")
 
+        # только при успешной оплате
         if payment_status == "success" and order_id:
             chat_id = int(order_id)
             await bot.send_message(
@@ -93,13 +95,14 @@ async def handle_access(request: web.Request):
         return web.Response(status=500)
 
 
-# === Настройка вебхука ===
+# === Установка вебхука ===
 async def on_startup(app: web.Application):
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
 
 
+# === Настройка aiohttp-приложения ===
 def setup_app() -> web.Application:
     app = web.Application()
     app.router.add_post("/access", handle_access)
