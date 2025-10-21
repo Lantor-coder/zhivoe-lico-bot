@@ -7,15 +7,16 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.enums import ParseMode
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 # === Константы ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PRODAMUS_SECRET = os.getenv("PRODAMUS_SECRET")
 BASE_URL = "https://nastroikatela.payform.ru/"
-PRICE = 4500  # стоимость курса в рублях
+PRICE = 4500  # цена курса
 WEBHOOK_URL = "https://zhivoe-lico-bot.onrender.com/webhook"
 
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+bot = Bot(token=BOT_TOKEN, default=types.DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 
@@ -92,17 +93,21 @@ async def handle_access(request: web.Request):
         return web.Response(status=500)
 
 
-# === Настройка веб-сервера ===
+# === Настройка вебхука ===
 async def on_startup(app: web.Application):
-    await bot.delete_webhook()
+    await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
 
 
 def setup_app() -> web.Application:
     app = web.Application()
-    dp.setup(app)
     app.router.add_post("/access", handle_access)
+
+    webhook_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+    webhook_handler.register(app, path="/webhook")
+
+    setup_application(app, dp, bot=bot)
     app.on_startup.append(on_startup)
     return app
 
