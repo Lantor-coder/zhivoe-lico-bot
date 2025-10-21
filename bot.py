@@ -132,7 +132,7 @@ def create_app():
     app.router.add_post("/webhook", handle_webhook)
     app.router.add_post("/access", handle_access)
     app.router.add_get("/", lambda _: web.Response(text="ok"))
-    app.on_startup.append(on_startup)
+ 
     return app
 
 
@@ -141,3 +141,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print(f"🚀 Сервер запущен на порту {port}")
     web.run_app(app, host="0.0.0.0", port=port)
+
