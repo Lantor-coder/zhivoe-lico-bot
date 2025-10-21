@@ -28,7 +28,7 @@ dp = Dispatcher()
 
 # === СОЗДАНИЕ ССЫЛКИ НА ОПЛАТУ ===
 def create_invoice(tg_id: int):
-    url = "https://payform.ru/api/v1/invoice"
+    url = "https://prodamus.com/api/v1/invoice"
     headers = {"Authorization": f"Bearer {PRODAMUS_API_KEY}"}
     payload = {
         "sum": PRICE,
@@ -165,3 +165,4 @@ if __name__ == "__main__":
     app = create_app()
     port = int(os.environ.get("PORT", 8080))
     web.run_app(app, host="0.0.0.0", port=port)
+
