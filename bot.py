@@ -19,7 +19,9 @@ dp = Dispatcher()
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     tg_id = message.from_user.id
-    pay_link = f"{PRODAMUS_LINK}?custom_fields[telegram_id]={tg_id}"
+    
+    pay_link = f"{PRODAMUS_LINK}?customer_extra={tg_id}"
+
     text = (
         "Привет 🌿\n\n"
         "Я помогу тебе оплатить и получить доступ к онлайн-курсу Антония Ланина «Живое лицо».\n\n"
@@ -114,3 +116,4 @@ if __name__ == "__main__":
     app = create_app()
     port = int(os.getenv("PORT", 8080))
     web.run_app(app, host="0.0.0.0", port=port)
+
