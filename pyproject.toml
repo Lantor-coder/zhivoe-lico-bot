@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+
+[tool.poetry.dependencies]
+python = "3.11.*"
+aiogram = "3.4.1"
+aiohttp = "3.9.5"
+requests = "2.31.0"
+pydantic = "2.5.3"
+pydantic-core = "2.14.6"
