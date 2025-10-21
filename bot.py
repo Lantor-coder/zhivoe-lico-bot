@@ -41,6 +41,7 @@ def create_invoice(tg_id: int):
         return None
 
     print(f"📡 Ответ Prodamus: {res.status_code} → {res.text}")
+    print("📡 Ответ Prodamus:", res.status_code, "→", repr(res.text))
 
     # Попробуем распарсить JSON, если есть
     try:
@@ -151,4 +152,5 @@ if __name__ == "__main__":
     app = create_app()
     port = int(os.environ.get("PORT", 8080))
     web.run_app(app, host="0.0.0.0", port=port)
+
 
