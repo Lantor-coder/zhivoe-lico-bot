@@ -34,8 +34,20 @@ def create_invoice(tg_id: int):
         "do": "pay"
     }
 
-    res = requests.post(url, headers=headers, json=payload)
-    data = res.json()
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=10)
+    except Exception as e:
+        print(f"🚫 Ошибка при обращении к Prodamus API: {e}")
+        return None
+
+    print(f"📡 Ответ Prodamus: {res.status_code} → {res.text}")
+
+    # Попробуем распарсить JSON, если есть
+    try:
+        data = res.json()
+    except Exception:
+        print("⚠️ Не удалось прочитать JSON из ответа Prodamus")
+        return None
 
     if not res.ok:
         print(f"⚠️ Ошибка Prodamus API: {res.status_code} → {data}")
@@ -139,3 +151,4 @@ if __name__ == "__main__":
     app = create_app()
     port = int(os.environ.get("PORT", 8080))
     web.run_app(app, host="0.0.0.0", port=port)
+
