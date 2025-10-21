@@ -11,12 +11,12 @@ from aiogram.filters import Command
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("BOT_TOKEN")
 PRODAMUS_API_KEY = os.getenv("PRODAMUS_API_KEY")
-CHANNEL_ID = -1003189812929  # ID твоего закрытого канала
+CHANNEL_ID = -1003189812929
 PRICE = 4500
+BASE_URL = "https://zhivoe-lico-bot.onrender.com"  # URL твоего бота на Render
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
 
 # === СОЗДАНИЕ ССЫЛКИ НА ОПЛАТУ ===
 def create_invoice(tg_id: int):
@@ -25,8 +25,8 @@ def create_invoice(tg_id: int):
     payload = {
         "sum": PRICE,
         "currency": "rub",
-        "order_num": str(tg_id),  # Телеграм ID как идентификатор
-        "type": "course",  # ✅ обязательный параметр
+        "order_num": str(tg_id),
+        "type": "course",
         "name": "Доступ к онлайн-курсу 'Живое лицо'",
         "description": "Онлайн-курс Антония Ланина 'Живое лицо'",
         "success_url": "https://t.me/nastroika_tela",
@@ -42,7 +42,6 @@ def create_invoice(tg_id: int):
         return None
 
     return data.get("url") or data.get("payment_link")
-
 
 # === /start ===
 @dp.message(Command("start"))
@@ -61,27 +60,25 @@ async def cmd_start(message: types.Message):
     )
     await message.answer(text)
 
-
 # === ПРОВЕРКА ПОДПИСИ ОТ PRODAMUS ===
 def verify_signature(request_body: dict, signature: str) -> bool:
     """Проверяем подпись, чтобы убедиться, что запрос пришёл от Prodamus"""
+    if not signature:
+        return False
     key = PRODAMUS_API_KEY
     raw = json.dumps(request_body, ensure_ascii=False, separators=(',', ':'))
     check = hmac.new(key.encode(), msg=raw.encode(), digestmod=hashlib.sha256).hexdigest()
     return check == signature
-
 
 # === ВЫДАЧА ССЫЛКИ ПОСЛЕ ОПЛАТЫ ===
 async def handle_access(request):
     data = await request.json()
     signature = request.headers.get("Sign")
 
-    # Проверка подписи
     if not verify_signature(data, signature):
         print("⚠️ Подпись не совпадает, запрос отклонён")
         return web.Response(text="invalid signature", status=403)
 
-    # Проверяем статус платежа
     if data.get("payment_status") != "success":
         return web.Response(text="not success", status=200)
 
@@ -110,19 +107,34 @@ async def handle_access(request):
         print(f"Ошибка при выдаче ссылки: {e}")
         return web.Response(text="error", status=500)
 
+# === ОБРАБОТКА ВЕБХУКА ОТ TELEGRAM ===
+async def handle_webhook(request):
+    data = await request.json()
+    update = types.Update(**data)
+    await dp.feed_update(bot, update)
+    return web.Response(text="ok")
 
-# === ЗАПУСК ===
+# === НАСТРОЙКА ВЕБХУКА ПРИ СТАРТЕ ===
 async def on_startup(app):
-    asyncio.create_task(dp.start_polling(bot))
-    print("✅ Бот запущен")
+    webhook_url = f"{BASE_URL}/webhook"
+    await bot.set_webhook(webhook_url)
+    print(f"✅ Webhook установлен: {webhook_url}")
 
+async def on_cleanup(app):
+    await bot.delete_webhook()
+    print("🚫 Webhook удалён")
+
+# === APP ===
 def create_app():
     app = web.Application()
-    app.router.add_post("/access", handle_access)
-    app.router.add_get("/", lambda _: web.Response(text="ok"))
+    app.router.add_post("/webhook", handle_webhook)  # Telegram
+    app.router.add_post("/access", handle_access)    # Prodamus webhook
+    app.router.add_get("/", lambda _: web.Response(text="ok"))  # Ping
     app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
     return app
 
+# === ЗАПУСК ===
 if __name__ == "__main__":
     app = create_app()
     port = int(os.environ.get("PORT", 8080))
