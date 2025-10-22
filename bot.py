@@ -70,19 +70,23 @@ def verify_signature(data: dict, signature: str) -> bool:
 
 
 # === Обработка уведомлений Prodamus ===
+from urllib.parse import parse_qs
+
 async def handle_access(request: web.Request):
     try:
         raw = await request.text()
         headers = dict(request.headers)
-        print("📩 Уведомление получено!")
-        print("🔸 Headers:", headers)
-        print("🔸 Body:", raw)
+        print("📬 Пришёл POST /access")
+        print("🔸 Заголовки:", headers)
+        print("🔸 Тело:", raw)
 
-        data = json.loads(raw)
+        # Парсим тело из form-urlencoded в словарь
+        data = {k: v[0] for k, v in parse_qs(raw).items()}
+
         raw_sign = headers.get("Sign", "")
         signature = raw_sign.replace("Sign:", "").strip()
 
-        # Проверка подписи
+        # Проверяем подпись
         if not verify_signature(data, signature):
             print("⚠️ Неверная подпись")
             return web.Response(text="invalid signature", status=403)
@@ -99,9 +103,7 @@ async def handle_access(request: web.Request):
 
         # Создаём одноразовую ссылку на канал
         invite = await bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID,
-            member_limit=1,
-            name=f"invite_{user_id}"
+            chat_id=CHANNEL_ID, member_limit=1, name=f"invite_{user_id}"
         )
         await bot.send_message(
             user_id,
@@ -140,5 +142,6 @@ def setup_app():
 if __name__ == "__main__":
     app = setup_app()
     web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
 
 
