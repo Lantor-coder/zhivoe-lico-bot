@@ -1,8 +1,6 @@
 import os
-import hmac
-import hashlib
 import json
-from urllib.parse import urlencode
+import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
@@ -12,8 +10,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 
 # === Конфигурация ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-PRODAMUS_SECRET = os.getenv("PRODAMUS_SECRET")  # ⚠️ убедись, что переменная именно так названа в Render
-BASE_URL = "https://nastroikatela.payform.ru/"
+BASE_URL = "https://nastroikatela.payform.ru/"  # твоя форма Prodamus
 WEBHOOK_URL = "https://zhivoe-lico-bot-1.onrender.com/webhook"
 PRICE = 4500  # стоимость курса
 
@@ -21,48 +18,36 @@ bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTM
 dp = Dispatcher()
 
 
-# === Генерация платёжной ссылки (HMAC-подписанная) ===
-def create_invoice(tg_id: int) -> str:
-    """Создаёт HMAC-подписанную ссылку Prodamus"""
-    data = {
-        "do": "pay",
-        "order_id": str(tg_id),
+# === Генерация платёжной ссылки через do=link ===
+async def create_payment_link(order_id: int) -> str:
+    """Создаёт короткую платёжную ссылку через Prodamus API"""
+    payload = {
+        "do": "link",
+        "order_id": order_id,
+        "products[0][name]": "Онлайн-курс 'Живое лицо'",
+        "products[0][price]": PRICE,
+        "products[0][quantity]": 1,
+        "customer_extra": "Оплата курса 'Живое лицо'",
         "urlSuccess": "https://t.me/nastroika_tela",
         "urlReturn": "https://t.me/nastroika_tela",
         "urlNotification": "https://zhivoe-lico-bot-1.onrender.com/access",
-        "npd_income_type": "FROM_INDIVIDUAL",
-        "customer_extra": "Оплата курса 'Живое лицо'",
-        "products": [
-            {
-                "name": "Онлайн-курс 'Живое лицо'",
-                "price": PRICE,
-                "quantity": 1
-            }
-        ]
     }
 
-    # === Формируем JSON без пробелов, как требует HMAC-алгоритм ===
-    json_data = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-
-    # === Подписываем данные секретным ключом SHA256 ===
-    signature = hmac.new(
-        PRODAMUS_SECRET.encode("utf-8"),
-        msg=json_data.encode("utf-8"),
-        digestmod=hashlib.sha256
-    ).hexdigest()
-
-    # === Добавляем подпись в объект ===
-    data["signature"] = signature
-
-    # === Кодируем JSON в параметр "data" ===
-    query = urlencode({"data": json.dumps(data, ensure_ascii=False)}, doseq=True)
-    return f"{BASE_URL}?{query}"
+    async with aiohttp.ClientSession() as session:
+        async with session.post(BASE_URL, data=payload) as resp:
+            link = await resp.text()
+            print(f"📎 Ответ Prodamus: {link}")
+            return link.strip()
 
 
 # === Обработка команды /start ===
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):
-    pay_link = create_invoice(message.from_user.id)
+    pay_link = await create_payment_link(message.from_user.id)
+    if not pay_link.startswith("http"):
+        await message.answer("⚠️ Ошибка при создании ссылки на оплату. Попробуй позже.")
+        return
+
     text = (
         "Привет 🌿\n\n"
         "Я помогу тебе оплатить и получить доступ к онлайн-курсу Антония Ланина «Живое лицо».\n\n"
@@ -72,14 +57,14 @@ async def start_cmd(message: types.Message):
     await message.answer(text, disable_web_page_preview=True)
 
 
-# === Webhook от Prodamus (уведомление о платеже) ===
+# === Обработка уведомлений о платеже ===
 async def handle_access(request: web.Request):
     try:
         data = await request.json()
+        print(f"📩 Уведомление от Prodamus: {data}")
         order_id = data.get("order_id")
         payment_status = data.get("status")
 
-        # Проверка успешной оплаты
         if payment_status == "success" and order_id:
             chat_id = int(order_id)
             await bot.send_message(
@@ -90,7 +75,7 @@ async def handle_access(request: web.Request):
             )
         return web.Response(status=200)
     except Exception as e:
-        print("Ошибка при обработке уведомления:", e)
+        print("❌ Ошибка при обработке уведомления:", e)
         return web.Response(status=500)
 
 
