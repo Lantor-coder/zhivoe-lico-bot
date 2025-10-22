@@ -14,7 +14,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PRODAMUS_SECRET = os.getenv("PRODAMUS_SECRET")
 BASE_URL = "https://nastroikatela.payform.ru/"
-WEBHOOK_URL = "https://zhivoe-lico-bot.onrender.com/webhook"
+WEBHOOK_URL = "https://zhivoe-lico-bot-1.onrender.com/webhook"
 PRICE = 4500  # стоимость курса
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -119,3 +119,4 @@ def setup_app() -> web.Application:
 if __name__ == "__main__":
     app = setup_app()
     web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
