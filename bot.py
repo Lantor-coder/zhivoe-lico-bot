@@ -5,11 +5,12 @@ from urllib.parse import urlencode, parse_qs
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.default import DefaultBotProperties
+from aiogram.filters import CommandStart  # ← важно!
 
 # === Конфигурация ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PRODAMUS_SECRET = os.getenv("PRODAMUS_SECRET")
-CHANNEL_LINK = "https://t.me/+YOUR_CHANNEL_INVITE_LINK"  # замени на реальную ссылку-приглашение
+CHANNEL_LINK = "https://t.me/+YOUR_CHANNEL_INVITE_LINK"  # вставь свою ссылку
 PRICE = 4500
 BASE_URL = "https://nastroikatela.payform.ru"
 WEBHOOK_URL = "https://zhivoe-lico-bot-1.onrender.com/webhook"
@@ -18,7 +19,7 @@ bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 
 
-# === Создание ссылки на оплату ===
+# === Генерация платёжной ссылки ===
 def create_invoice(tg_id: int) -> str:
     params = {
         "order_num": tg_id,
@@ -34,7 +35,7 @@ def create_invoice(tg_id: int) -> str:
     return f"{BASE_URL}?{urlencode(params, doseq=True)}"
 
 
-# === Проверка подписи Prodamus (точно как Hmac::verify($_POST,...)) ===
+# === Проверка подписи ===
 def compute_prodamus_signature(secret: str, form_data: dict) -> str:
     sorted_items = sorted(form_data.items())
     message = "&".join(f"{k}={v}" for k, v in sorted_items)
@@ -42,19 +43,20 @@ def compute_prodamus_signature(secret: str, form_data: dict) -> str:
 
 
 # === Команда /start ===
-@dp.message(commands=["start"])
-async def cmd_start(message: types.Message):
+@dp.message(CommandStart())
+async def start_cmd(message: types.Message):
     pay_link = create_invoice(message.from_user.id)
     text = (
         "Привет 🌿\n\n"
-        "Я помогу тебе оплатить и получить доступ к онлайн-курсу Антония Ланина <b>«Живое лицо»</b>.\n\n"
+        "Я помогу тебе оплатить и получить доступ к онлайн-курсу "
+        "<b>«Живое лицо»</b> Антония Ланина.\n\n"
         f"👉 <a href='{pay_link}'>Перейти к оплате (4500 ₽)</a>\n\n"
         "После оплаты бот автоматически пришлёт ссылку на закрытый канал 💫"
     )
     await message.answer(text, disable_web_page_preview=True)
 
 
-# === Обработка уведомлений Prodamus ===
+# === Приём уведомлений Prodamus ===
 async def handle_access(request: web.Request):
     print("📩 Уведомление получено!")
     headers = dict(request.headers)
@@ -73,7 +75,7 @@ async def handle_access(request: web.Request):
         print("⚠️ Неверная подпись")
         return web.Response(text="invalid signature", status=403)
 
-    # Если всё ок — отправляем доступ пользователю
+    # Успешная оплата → отправляем ссылку пользователю
     if data.get("payment_status") == "success":
         try:
             user_id = int(data.get("order_num"))
@@ -88,20 +90,19 @@ async def handle_access(request: web.Request):
     return web.Response(text="success", status=200)
 
 
-# === Страницы успеха и ошибки ===
+# === Страницы успеха / ошибки ===
 async def success_page(request):
-    return web.Response(text="✅ Оплата успешна! Ссылка придёт в Telegram-бот.", content_type="text/html")
+    return web.Response(text="✅ Оплата успешна! Ссылка придёт в Telegram.", content_type="text/html")
 
 async def fail_page(request):
-    return web.Response(text="❌ Ошибка оплаты. Попробуйте ещё раз.", content_type="text/html")
+    return web.Response(text="❌ Ошибка оплаты. Попробуйте снова.", content_type="text/html")
 
 
-# === Настройка приложения и вебхука ===
+# === Настройка приложения ===
 async def on_startup(app):
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-
 
 def setup_app():
     app = web.Application()
@@ -114,3 +115,4 @@ def setup_app():
 
 if __name__ == "__main__":
     web.run_app(setup_app(), host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
