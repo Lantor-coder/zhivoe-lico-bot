@@ -74,39 +74,47 @@ async def handle_access(request: web.Request):
     try:
         raw = await request.text()
         headers = dict(request.headers)
-        print("📬 Пришёл POST /access")
-        print("🔸 Заголовки:", headers)
-        print("🔸 Тело:", raw)
+        print("📩 Уведомление получено!")
+        print("🔸 Headers:", headers)
+        print("🔸 Body:", raw)
 
-        signature = headers.get("Sign")
         data = json.loads(raw)
+        raw_sign = headers.get("Sign", "")
+        signature = raw_sign.replace("Sign:", "").strip()
 
+        # Проверка подписи
         if not verify_signature(data, signature):
-            print("⚠️ Подпись не совпала!")
+            print("⚠️ Неверная подпись")
             return web.Response(text="invalid signature", status=403)
 
-        if data.get("status") != "success":
-            print("ℹ️ Статус оплаты не success:", data.get("status"))
+        # Проверяем статус оплаты
+        if data.get("payment_status") != "success":
+            print(f"ℹ️ Статус не 'success': {data.get('payment_status')}")
             return web.Response(text="not success", status=200)
 
-        user_id = int(data.get("order_id", 0))
+        user_id = int(data.get("order_num", 0))
         if not user_id:
             print("⚠️ Нет user_id")
             return web.Response(text="no user_id", status=400)
 
+        # Создаём одноразовую ссылку на канал
         invite = await bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID, member_limit=1, name=f"invite_{user_id}"
+            chat_id=CHANNEL_ID,
+            member_limit=1,
+            name=f"invite_{user_id}"
         )
         await bot.send_message(
             user_id,
-            f"🎉 Оплата получена!\n\nВот твоя ссылка:\n{invite.invite_link}"
+            f"🎉 Оплата получена!\n\nВот твоя ссылка на курс:\n{invite.invite_link}"
         )
-        print(f"✅ Ссылка отправлена пользователю {user_id}")
+
+        print(f"✅ Ссылка выдана пользователю {user_id}")
         return web.Response(text="ok", status=200)
 
     except Exception as e:
         print("❌ Ошибка при обработке уведомления:", e)
         return web.Response(status=500)
+
 
 
 # === Инициализация вебхука ===
@@ -132,4 +140,5 @@ def setup_app():
 if __name__ == "__main__":
     app = setup_app()
     web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
 
