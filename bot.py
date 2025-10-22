@@ -12,7 +12,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 
 # === Конфигурация ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-PRODAMUS_SECRET = os.getenv("PRODAMUS_SECRET")
+PRODAMUS_SECRET = os.getenv("PRODAMUS_SECRET")  # ⚠️ убедись, что переменная именно так названа в Render
 BASE_URL = "https://nastroikatela.payform.ru/"
 WEBHOOK_URL = "https://zhivoe-lico-bot-1.onrender.com/webhook"
 PRICE = 4500  # стоимость курса
@@ -21,41 +21,40 @@ bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTM
 dp = Dispatcher()
 
 
-# === Генерация платёжной ссылки (HMAC) ===
+# === Генерация платёжной ссылки (HMAC-подписанная) ===
 def create_invoice(tg_id: int) -> str:
     """Создаёт HMAC-подписанную ссылку Prodamus"""
     data = {
-        "order_id": tg_id,
-        "customer_phone": "",
-        "customer_email": "",
+        "do": "pay",
+        "order_id": str(tg_id),
+        "urlSuccess": "https://t.me/nastroika_tela",
+        "urlReturn": "https://t.me/nastroika_tela",
+        "urlNotification": "https://zhivoe-lico-bot-1.onrender.com/access",
+        "npd_income_type": "FROM_INDIVIDUAL",
+        "customer_extra": "Оплата курса 'Живое лицо'",
         "products": [
             {
                 "name": "Онлайн-курс 'Живое лицо'",
                 "price": PRICE,
-                "quantity": 1,
-                "tax": {"tax_type": 0},
-                "paymentMethod": 1,
-                "paymentObject": 4,
+                "quantity": 1
             }
-        ],
-        "do": "pay",
-        "urlSuccess": "https://t.me/nastroika_tela",
-        "urlReturn": "https://t.me/nastroika_tela",
-        "urlNotification": "https://zhivoe-lico-bot-1.onrender.com/access",
-        "customer_extra": "Оплата курса 'Живое лицо'",
-        "npd_income_type": "FROM_INDIVIDUAL",
+        ]
     }
 
-    # Подпись данных
+    # === Формируем JSON без пробелов, как требует HMAC-алгоритм ===
     json_data = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+    # === Подписываем данные секретным ключом SHA256 ===
     signature = hmac.new(
-        PRODAMUS_SECRET.encode(),
-        msg=json_data.encode(),
+        PRODAMUS_SECRET.encode("utf-8"),
+        msg=json_data.encode("utf-8"),
         digestmod=hashlib.sha256
     ).hexdigest()
 
+    # === Добавляем подпись в объект ===
     data["signature"] = signature
 
+    # === Кодируем JSON в параметр "data" ===
     query = urlencode({"data": json.dumps(data, ensure_ascii=False)}, doseq=True)
     return f"{BASE_URL}?{query}"
 
@@ -80,7 +79,7 @@ async def handle_access(request: web.Request):
         order_id = data.get("order_id")
         payment_status = data.get("status")
 
-        # только при успешной оплате
+        # Проверка успешной оплаты
         if payment_status == "success" and order_id:
             chat_id = int(order_id)
             await bot.send_message(
@@ -95,7 +94,7 @@ async def handle_access(request: web.Request):
         return web.Response(status=500)
 
 
-# === Установка вебхука ===
+# === Установка webhook ===
 async def on_startup(app: web.Application):
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
@@ -119,5 +118,3 @@ def setup_app() -> web.Application:
 if __name__ == "__main__":
     app = setup_app()
     web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
-
-
