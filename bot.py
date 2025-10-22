@@ -41,7 +41,7 @@ def create_invoice(tg_id: int) -> str:
         "do": "pay",
         "urlSuccess": "https://t.me/nastroika_tela",
         "urlReturn": "https://t.me/nastroika_tela",
-        "urlNotification": "https://zhivoe-lico-bot.onrender.com/access",
+        "urlNotification": "https://zhivoe-lico-bot-1.onrender.com/access",
         "customer_extra": "Оплата курса 'Живое лицо'",
         "npd_income_type": "FROM_INDIVIDUAL",
     }
@@ -119,4 +119,5 @@ def setup_app() -> web.Application:
 if __name__ == "__main__":
     app = setup_app()
     web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
 
