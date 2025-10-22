@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: zhivoe-lico-bot
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: PRODAMUS_API_KEY
+        sync: false
